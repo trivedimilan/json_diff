@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JSON Diff Tool</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f5f5f5;
+      color: #333;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    
+    .input-area {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    
+    .json-input {
+      flex: 1;
+    }
+    
+    textarea {
+      width: 100%;
+      height: 300px;
+      padding: 10px;
+      font-family: monospace;
+      font-size: 14px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      resize: vertical;
+    }
+    
+    .controls {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    
+    button {
+      padding: 10px 15px;
+      background-color: #4a90e2;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    
+    button:hover {
+      background-color: #3a7bc8;
+    }
+    
+    button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+    
+    .result-area {
+      display: flex;
+      gap: 20px;
+    }
+    
+    .result-panel {
+      flex: 1;
+      overflow: auto;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background-color: white;
+      height: 500px;
+    }
+    
+    pre {
+      margin: 0;
+      padding: 10px;
+      font-family: monospace;
+      font-size: 14px;
+    }
+    
+    .diff-added {
+      background-color: #e6ffed;
+      color: #22863a;
+    }
+    
+    .diff-removed {
+      background-color: #ffeef0;
+      color: #cb2431;
+    }
+    
+    .diff-unchanged {
+      color: #333;
+    }
+    
+    .error {
+      color: #d73a49;
+      text-align: center;
+      margin: 10px 0;
+    }
+    
+    .status-bar {
+      text-align: center;
+      margin-top: 10px;
+      font-size: 14px;
+      color: #666;
+    }
+    
+    /* Responsive design */
+    @media (max-width: 768px) {
+      .input-area, .result-area {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>JSON Diff Tool</h1>
+    
+    <div class="input-area">
+      <div class="json-input">
+        <h3>JSON 1</h3>
+        <textarea id="json1" placeholder="Paste first JSON here..."></textarea>
+      </div>
+      <div class="json-input">
+        <h3>JSON 2</h3>
+        <textarea id="json2" placeholder="Paste second JSON here..."></textarea>
+      </div>
+    </div>
+    
+    <div class="error" id="error"></div>
+    
+    <div class="controls">
+      <button id="formatBtn">Format Both</button>
+      <button id="diffBtn">Compare</button>
+      <button id="clearBtn">Clear All</button>
+    </div>
+    
+    <div class="result-area">
+      <div class="result-panel">
+        <pre id="result1"></pre>
+      </div>
+      <div class="result-panel">
+        <pre id="result2"></pre>
+      </div>
+    </div>
+    
+    <div class="status-bar" id="status"></div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const json1Input = document.getElementById('json1');
+      const json2Input = document.getElementById('json2');
+      const result1Element = document.getElementById('result1');
+      const result2Element = document.getElementById('result2');
+      const errorElement = document.getElementById('error');
+      const statusElement = document.getElementById('status');
+      const formatBtn = document.getElementById('formatBtn');
+      const diffBtn = document.getElementById('diffBtn');
+      const clearBtn = document.getElementById('clearBtn');
+      
+      // Format JSON and handle large inputs with chunking
+      function formatJson(jsonStr) {
+        try {
+          if (!jsonStr.trim()) return '';
+          
+          const jsonObj = JSON.parse(jsonStr);
+          return JSON.stringify(jsonObj, null, 2);
+        } catch (e) {
+          throw new Error(`Invalid JSON: ${e.message}`);
+        }
+      }
+      
+      // Deep compare two objects and track differences
+      function deepDiff(obj1, obj2, path = '') {
+        const diffs = [];
+        
+        // Check for added or modified properties in obj2
+        for (const key in obj2) {
+          const currentPath = path ? `${path}.${key}` : key;
+          
+          if (!(key in obj1)) {
+            // Property exists in obj2 but not in obj1 (added)
+            diffs.push({
+              path: currentPath,
+              type: 'added',
+              value: obj2[key]
+            });
+          } else if (typeof obj2[key] !== typeof obj1[key]) {
+            // Types differ
+            diffs.push({
+              path: currentPath,
+              type: 'modified',
+              oldValue: obj1[key],
+              newValue: obj2[key]
+            });
+          } else if (typeof obj2[key] === 'object' && obj2[key] !== null && obj1[key] !== null) {
+            // Both are objects, recurse
+            if (Array.isArray(obj2[key]) !== Array.isArray(obj1[key])) {
+              // One is array, one is object
+              diffs.push({
+                path: currentPath,
+                type: 'modified',
+                oldValue: obj1[key],
+                newValue: obj2[key]
+              });
+            } else {
+              // Same type of object, compare deeper
+              const childDiffs = deepDiff(obj1[key], obj2[key], currentPath);
+              diffs.push(...childDiffs);
+            }
+          } else if (obj1[key] !== obj2[key]) {
+            // Simple values differ
+            diffs.push({
+              path: currentPath,
+              type: 'modified',
+              oldValue: obj1[key],
+              newValue: obj2[key]
+            });
+          }
+        }
+        
+        // Check for removed properties in obj2
+        for (const key in obj1) {
+          const currentPath = path ? `${path}.${key}` : key;
+          
+          if (!(key in obj2)) {
+            // Property exists in obj1 but not in obj2 (removed)
+            diffs.push({
+              path: currentPath,
+              type: 'removed',
+              value: obj1[key]
+            });
+          }
+        }
+        
+        return diffs;
+      }
+      
+      // Apply highlighting to formatted JSON based on diffs
+      function applyHighlighting(json1, json2, diffs) {
+        let highlightedJson1 = JSON.stringify(json1, null, 2);
+        let highlightedJson2 = JSON.stringify(json2, null, 2);
+        
+        // Create markup for each version
+        const obj1Lines = highlightedJson1.split('\n');
+        const obj2Lines = highlightedJson2.split('\n');
+        
+        // Simple line-based highlighting for this demo
+        // For large files, a more efficient approach would be needed
+        
+        // Convert paths to line numbers (simplified approach)
+        const affectedLines = new Set();
+        diffs.forEach(diff => {
+          const pathParts = diff.path.split('.');
+          const searchKey = pathParts[pathParts.length - 1];
+          
+          // Find lines containing this key or value
+          obj1Lines.forEach((line, idx) => {
+            if (line.includes(`"${searchKey}"`) || 
+                (diff.oldValue !== undefined && line.includes(String(diff.oldValue)))) {
+              affectedLines.add(idx);
+            }
+          });
+          
+          obj2Lines.forEach((line, idx) => {
+            if (line.includes(`"${searchKey}"`) || 
+                (diff.newValue !== undefined && line.includes(String(diff.newValue)))) {
+              affectedLines.add(idx);
+            }
+          });
+        });
+        
+        // Apply highlighting
+        for (const lineNum of Array.from(affectedLines).sort((a, b) => a - b)) {
+          if (lineNum < obj1Lines.length) {
+            if (diffs.some(d => d.type === 'removed')) {
+              obj1Lines[lineNum] = `<span class="diff-removed">${obj1Lines[lineNum]}</span>`;
+            }
+          }
+          
+          if (lineNum < obj2Lines.length) {
+            if (diffs.some(d => d.type === 'added')) {
+              obj2Lines[lineNum] = `<span class="diff-added">${obj2Lines[lineNum]}</span>`;
+            }
+          }
+        }
+        
+        return {
+          obj1: obj1Lines.join('\n'),
+          obj2: obj2Lines.join('\n')
+        };
+      }
+      
+      // Format button click handler
+      formatBtn.addEventListener('click', function() {
+        errorElement.textContent = '';
+        
+        try {
+          if (json1Input.value.trim()) {
+            const formatted1 = formatJson(json1Input.value);
+            json1Input.value = formatted1;
+            result1Element.textContent = formatted1;
+          }
+          
+          if (json2Input.value.trim()) {
+            const formatted2 = formatJson(json2Input.value);
+            json2Input.value = formatted2;
+            result2Element.textContent = formatted2;
+          }
+          
+          statusElement.textContent = 'JSON formatted successfully';
+        } catch (e) {
+          errorElement.textContent = e.message;
+        }
+      });
+      
+      // Compare button click handler
+      diffBtn.addEventListener('click', function() {
+        errorElement.textContent = '';
+        statusElement.textContent = 'Processing...';
+        
+        setTimeout(() => {
+          try {
+            if (!json1Input.value.trim() || !json2Input.value.trim()) {
+              throw new Error('Please provide both JSON documents');
+            }
+            
+            const obj1 = JSON.parse(json1Input.value);
+            const obj2 = JSON.parse(json2Input.value);
+            
+            // Format the inputs
+            json1Input.value = JSON.stringify(obj1, null, 2);
+            json2Input.value = JSON.stringify(obj2, null, 2);
+            
+            // Calculate differences
+            const differences = deepDiff(obj1, obj2);
+            
+            if (differences.length === 0) {
+              result1Element.textContent = JSON.stringify(obj1, null, 2);
+              result2Element.textContent = JSON.stringify(obj2, null, 2);
+              statusElement.textContent = 'No differences found. The JSON documents are identical.';
+            } else {
+              // Apply highlighting based on differences
+              const highlighted = applyHighlighting(obj1, obj2, differences);
+              result1Element.innerHTML = highlighted.obj1;
+              result2Element.innerHTML = highlighted.obj2;
+              statusElement.textContent = `Found ${differences.length} differences`;
+            }
+          } catch (e) {
+            errorElement.textContent = e.message;
+            statusElement.textContent = '';
+          }
+        }, 100); // Small delay to allow UI to update
+      });
+      
+      // Clear button click handler
+      clearBtn.addEventListener('click', function() {
+        json1Input.value = '';
+        json2Input.value = '';
+        result1Element.textContent = '';
+        result2Element.innerHTML = '';
+        errorElement.textContent = '';
+        statusElement.textContent = '';
+      });
+    });
+  </script>
+</body>
+</html>
