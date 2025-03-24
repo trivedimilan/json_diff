@@ -174,42 +174,62 @@
         const diffBtn = document.getElementById('diffBtn');
         const clearBtn = document.getElementById('clearBtn');
 
-        function applyHighlighting(json1, json2, diffs, indent = '') {
+        function applyHighlighting(json1, json2, diffs, indent = 0) {
             let json_blob1 = '';
             let json_blob2 = '';
 
             //recurively go through diffs
             for (const key in diffs) {
+                //if string, add quotes to key
+                const keyString = typeof key === 'string' ? `"${key}"` : key;
+                
                 const type = diffs[key].type;
 
                 const json1Value = json1?.[key];
                 const json2Value = json2?.[key];
 
-                //get json string of json1 and json2
-                const json1String = JSON.stringify(json1Value);
-                const json2String = JSON.stringify(json2Value);
+                //make indent a string of tabs
+                const indentString = '\t'.repeat(indent);
+
+                //make into string with indenation
+                let json1String = '';
+                if(json1Value !== undefined ) {
+                    json1String = JSON.stringify(json1Value, null, 2)
+                    .split('\n')
+                    .map((line, i) => i === 0 ? line : indentString + line)
+                    .join('\n');
+                } 
+
+                let json2String = '';
+                if(json2Value !== undefined ) {
+                    json2String = JSON.stringify(json2Value, null, 2)
+                    .split('\n')
+                    .map((line, i) => i === 0 ? line : indentString + line)
+                    .join('\n');
+                }
 
                 if (type === 'added') {
-                    json_blob2 += `${indent}<span style="background-color: #d4fcbc; color: #1b5e20">${key}: ${json2String}</span>,\n`;
+                    json_blob2 += `${indentString}<span style="background-color: #d4fcbc; color: #1b5e20">${keyString}: ${json2String}</span>,\n`;
                 } else if (type === 'removed') {
-                    json_blob1 += `${indent}<span style="background-color: #ffebee; color: #c62828">${key}: ${json1String}</span>,\n`;
+                    json_blob1 += `${indentString}<span style="background-color: #ffebee; color: #c62828">${keyString}: ${json1String}</span>,\n`;
                 } else if (type === 'equal' && _.isPlainObject(diffs[key].value)) {
-                    const childDiff = applyHighlighting(json1Value, json2Value, diffs[key].value, indent + '\t');
+                    const childDiff = applyHighlighting(json1Value, json2Value, diffs[key].value, indent + 1);
 
                     //remove the last comma
                     let childDiffJson1 = childDiff.json1.replace(/,\s*$/, '\n');
                     let childDiffJson2 = childDiff.json2.replace(/,\s*$/, '\n'); 
 
-                    json_blob1 += `${indent}${key}: {\n${childDiffJson1}`;
-                    json_blob1 += `${indent}},\n`;
-                    json_blob2 += `${indent}${key}: {\n${childDiffJson2}`;
-                    json_blob2 += `${indent}},\n`;
+                    json_blob1 += `${indentString}${keyString}: {\n${childDiffJson1}`;
+                    json_blob1 += `${indentString}},\n`;
+                    json_blob2 += `${indentString}${keyString}: {\n${childDiffJson2}`;
+                    json_blob2 += `${indentString}},\n`;
                 } else if (type === 'equal') {
-                    json_blob1 += `${indent}${key}: ${json1String},\n`;
-                    json_blob2 += `${indent}${key}: ${json2String},\n`;
+                    json_blob1 += `${indentString}${keyString}: ${json1String},\n`;
+                    json_blob2 += `${indentString}${keyString}: ${json2String},\n`;
                 } else if (type === 'unequal') {
-                    json_blob1 += `${indent}${key}: <span style="background-color: #fff8e1; color: #ff6f00">${json1String}</span>,\n`;
-                    json_blob2 += `${indent}${key}: <span style="background-color: #fff8e1; color: #ff6f00">${json2String}</span>,\n`;
+                    const result =unequal_handler(json1String, json2String, keyString, indentString);
+                    json_blob1 += result.json1;
+                    json_blob2 += result.json2;
                 }
             }
 
@@ -217,6 +237,42 @@
             json_blob1 = json_blob1.replace(/,\s*$/, '\n');
             json_blob2 = json_blob2.replace(/,\s*$/, '\n'); 
 
+            return {
+                json1: json_blob1,
+                json2: json_blob2
+            }
+        }
+
+        function unequal_handler(json1String, json2String, keyString, indentString) {
+
+            // let json1StringRes = "";
+            // let json2StringRes = "";
+
+    
+            // let i = 0, j = 0;
+            
+            // while (i < json1String.length || j < json2String.length) {
+            //     if (i < json1String.length && j < json2String.length && json1String[i] === json2String[j]) {
+            //         // Characters match, add normally
+            //         json1StringRes += json1String[i];
+            //         json2StringRes += json2String[j];
+            //         i++;
+            //         j++;
+            //     } else {
+            //         // Characters do not match, highlight the difference
+            //         json1StringRes += `<span style="background-color: #fff8e1; color: #ff6f00">${json2String[j] || ""}</span>`;
+            //         json2StringRes += `<span style="background-color: #fff8e1; color: #ff6f00">${json2String[j] || ""}</span>`;
+            //         i += json1String[i] !== json2String[j] ? 1 : 0; // Move in str1 if mismatched
+            //         j += json2String[j] !== json1String[i] ? 1 : 0; // Move in str2 if mismatched
+            //     }
+            // }
+
+            let json_blob1 = '';
+            let json_blob2 = '';
+
+            json_blob1 += `${indentString}${keyString}: <span style="background-color: #fff8e1; color: #ff6f00">${json1String}</span>,\n`;
+            json_blob2 += `${indentString}${keyString}: <span style="background-color: #fff8e1; color: #ff6f00">${json2String}</span>,\n`;
+        
             return {
                 json1: json_blob1,
                 json2: json_blob2
@@ -251,7 +307,6 @@
             return diff;
         }
 
-        // Compare button click handler
         diffBtn.addEventListener('click', function() {
         errorElement.textContent = '';
         statusElement.textContent = 'Processing...';
@@ -259,19 +314,151 @@
         
         setTimeout(() => {
           try {
+
+            // if (!json1Input.value.trim() || !json2Input.value.trim()) {
+            //   throw new Error('Please provide both JSON documents');
+            // }
             
-            if (!json1Input.value.trim() || !json2Input.value.trim()) {
-              throw new Error('Please provide both JSON documents');
+            // const obj1 = JSON.parse(json1Input.value);
+            // const obj2 = JSON.parse(json2Input.value);
+
+            const obj1 = {
+                "id": 102,
+                "name": "Bob Smith",
+                "email": "bob@example.com",
+                "age": 35,
+                "preferences": {
+                    "language": "Spanish",
+                    "currency": "USD",
+                    "notifications": false,
+                    "theme": "light",
+                    "timezone": "PST"
+                },
+                "subscriptions": ["news", "entertainment", "finance"],
+                "activity": {
+                    "last_login": "2025-03-22T08:45:00Z",
+                    "posts": [
+                        {
+                            "id": 1,
+                            "title": "My First Blog",
+                            "content": "This is my first blog post.",
+                            "likes": 15,
+                            "comments": 3
+                        },
+                        {
+                            "id": 3,
+                            "title": "Investing 101",
+                            "content": "A guide to smart investing.",
+                            "likes": 40,
+                            "comments": 10
+                        }
+                    ]
+                },
+                "devices": [
+                    {
+                        "id": "device_003",
+                        "type": "tablet",
+                        "os": "Android",
+                        "version": "13.0"
+                    }
+                ],
+                "security": {
+                    "2FA_enabled": false,
+                    "backup_codes": []
+                },
+                "friends": [
+                    {
+                        "id": 202,
+                        "name": "Dana White",
+                        "status": "active"
+                    }
+                ]
             }
-            
-            const obj1 = JSON.parse(json1Input.value);
-            const obj2 = JSON.parse(json2Input.value);
+
+            const obj2 = {
+                "id": 101,
+                "name": "Alice Johnson",
+                "email": "alice@example.com",
+                "age": 28,
+                "location": {
+                    "city": "New York",
+                    "state": "NY",
+                    "country": "USA",
+                    "coordinates": {
+                        "latitude": 40.7128,
+                        "longitude": -74.0060
+                    }
+                },
+                "preferences": {
+                    "language": "English",
+                    "currency": "USD",
+                    "notifications": true,
+                    "theme": "dark",
+                    "timezone": "EST"
+                },
+                "subscriptions": ["news", "sports"],
+                "activity": {
+                    "last_login": "2025-03-20T14:32:00Z",
+                    "posts": [
+                        {
+                            "id": 1,
+                            "title": "My First Blog",
+                            "content": "This is my first blog post.",
+                            "likes": 10,
+                            "comments": 2
+                        },
+                        {
+                            "id": 2,
+                            "title": "Tech Trends",
+                            "content": "AI is evolving rapidly.",
+                            "likes": 25,
+                            "comments": 5
+                        }
+                    ]
+                },
+                "devices": [
+                    {
+                        "id": "device_001",
+                        "type": "mobile",
+                        "os": "iOS",
+                        "version": "17.1"
+                    },
+                    {
+                        "id": "device_002",
+                        "type": "desktop",
+                        "os": "Windows",
+                        "version": "11"
+                    }
+                ],
+                "security": {
+                    "2FA_enabled": true,
+                    "backup_codes": [
+                        "A1B2C3",
+                        "D4E5F6",
+                        "G7H8I9"
+                    ]
+                },
+                "friends": [
+                    {
+                        "id": 201,
+                        "name": "Charlie Brown",
+                        "status": "active"
+                    },
+                    {
+                        "id": 202,
+                        "name": "Dana White",
+                        "status": "inactive"
+                    }
+                ]
+            }
 
             //use compareJsonObjects to get the differences
             const differences = compareObjects(obj1, obj2);
 
             //use applyHighlighting to highlight the differences
-            const highlights = applyHighlighting(obj1, obj2, differences, '\t');
+            const highlights = applyHighlighting(obj1, obj2, differences, 1);
+
+            console.log(highlights);
 
             result1Element.innerHTML = `{\n${highlights.json1}}`;
             result2Element.innerHTML = `{\n${highlights.json2}}`;
@@ -280,7 +467,7 @@
             errorElement.textContent = e.message;
             statusElement.textContent = '';
           }
-        }, 100); // Small delay to allow UI to update
+        }, 100);
       });
       
         // Clear button click handler
