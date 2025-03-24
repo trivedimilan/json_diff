@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>JSON Diff Tool</title>
+  <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
@@ -31,6 +32,8 @@
     
     .json-input {
       flex: 1;
+      margin-left: 10px;
+      margin-right: 10px;
     }
     
     textarea {
@@ -144,7 +147,6 @@
     <div class="error" id="error"></div>
     
     <div class="controls">
-      <button id="formatBtn">Format Both</button>
       <button id="diffBtn">Compare</button>
       <button id="clearBtn">Clear All</button>
     </div>
@@ -162,205 +164,157 @@
   </div>
 
   <script>
-    document.addEventListener('DOMContentLoaded', function() {
-      const json1Input = document.getElementById('json1');
-      const json2Input = document.getElementById('json2');
-      const result1Element = document.getElementById('result1');
-      const result2Element = document.getElementById('result2');
-      const errorElement = document.getElementById('error');
-      const statusElement = document.getElementById('status');
-      const formatBtn = document.getElementById('formatBtn');
-      const diffBtn = document.getElementById('diffBtn');
-      const clearBtn = document.getElementById('clearBtn');
-      
-      // Format JSON and handle large inputs with chunking
-      function formatJson(jsonStr) {
-        try {
-          if (!jsonStr.trim()) return '';
-          
-          const jsonObj = JSON.parse(jsonStr);
-          return JSON.stringify(jsonObj, null, 2);
-        } catch (e) {
-          throw new Error(`Invalid JSON: ${e.message}`);
-        }
-      }
-      
-      // Deep compare two objects and track differences
-      function deepDiff(obj1, obj2, path = '') {
-        const diffs = [];
-        
-        // Check for added or modified properties in obj2
-        for (const key in obj2) {
-          const currentPath = path ? `${path}.${key}` : key;
-          
-          if (!(key in obj1)) {
-            // Property exists in obj2 but not in obj1 (added)
-            diffs.push({
-              path: currentPath,
-              type: 'added',
-              value: obj2[key]
-            });
-          } else if (typeof obj2[key] !== typeof obj1[key]) {
-            // Types differ
-            diffs.push({
-              path: currentPath,
-              type: 'modified',
-              oldValue: obj1[key],
-              newValue: obj2[key]
-            });
-          } else if (typeof obj2[key] === 'object' && obj2[key] !== null && obj1[key] !== null) {
-            // Both are objects, recurse
-            if (Array.isArray(obj2[key]) !== Array.isArray(obj1[key])) {
-              // One is array, one is object
-              diffs.push({
-                path: currentPath,
-                type: 'modified',
-                oldValue: obj1[key],
-                newValue: obj2[key]
-              });
-            } else {
-              // Same type of object, compare deeper
-              const childDiffs = deepDiff(obj1[key], obj2[key], currentPath);
-              diffs.push(...childDiffs);
+        document.addEventListener('DOMContentLoaded', function() {
+        const json1Input = document.getElementById('json1');
+        const json2Input = document.getElementById('json2');
+        const result1Element = document.getElementById('result1');
+        const result2Element = document.getElementById('result2');
+        const errorElement = document.getElementById('error');
+        const statusElement = document.getElementById('status');
+        const diffBtn = document.getElementById('diffBtn');
+        const clearBtn = document.getElementById('clearBtn');
+
+        function applyHighlighting(json1, json2, diffs, indent = '') {
+            let json_blob1 = '';
+            let json_blob2 = '';
+
+            //recurively go through diffs
+            for (const key in diffs) {
+                const type = diffs[key].type;
+
+                const json1Value = json1?.[key];
+                const json2Value = json2?.[key];
+
+                //get json string of json1 and json2
+                const json1String = JSON.stringify(json1Value);
+                const json2String = JSON.stringify(json2Value);
+
+                if (type === 'added') {
+                    json_blob2 += `${indent}<span style="background-color: #d4fcbc; color: #1b5e20">${key}: ${json2String}</span>,\n`;
+                } else if (type === 'removed') {
+                    json_blob1 += `${indent}<span style="background-color: #ffebee; color: #c62828">${key}: ${json1String}</span>,\n`;
+                } else if (type === 'equal' && _.isPlainObject(diffs[key].value)) {
+                    const childDiff = applyHighlighting(json1Value, json2Value, diffs[key].value, indent + '\t');
+
+                    //remove the last comma
+                    let childDiffJson1 = childDiff.json1.replace(/,\s*$/, '\n');
+                    let childDiffJson2 = childDiff.json2.replace(/,\s*$/, '\n'); 
+
+                    json_blob1 += `${indent}${key}: {\n${childDiffJson1}`;
+                    json_blob1 += `${indent}},\n`;
+                    json_blob2 += `${indent}${key}: {\n${childDiffJson2}`;
+                    json_blob2 += `${indent}},\n`;
+                } else if (type === 'equal') {
+                    json_blob1 += `${indent}${key}: ${json1String},\n`;
+                    json_blob2 += `${indent}${key}: ${json2String},\n`;
+                } else if (type === 'unequal') {
+                    json_blob1 += `${indent}${key}: <span style="background-color: #fff8e1; color: #ff6f00">${json1String}</span>,\n`;
+                    json_blob2 += `${indent}${key}: <span style="background-color: #fff8e1; color: #ff6f00">${json2String}</span>,\n`;
+                }
             }
-          } else if (obj1[key] !== obj2[key]) {
-            // Simple values differ
-            diffs.push({
-              path: currentPath,
-              type: 'modified',
-              oldValue: obj1[key],
-              newValue: obj2[key]
-            });
-          }
+
+            //remove the last comma
+            json_blob1 = json_blob1.replace(/,\s*$/, '\n');
+            json_blob2 = json_blob2.replace(/,\s*$/, '\n'); 
+
+            return {
+                json1: json_blob1,
+                json2: json_blob2
+            }
         }
         
-        // Check for removed properties in obj2
-        for (const key in obj1) {
-          const currentPath = path ? `${path}.${key}` : key;
-          
-          if (!(key in obj2)) {
-            // Property exists in obj1 but not in obj2 (removed)
-            diffs.push({
-              path: currentPath,
-              type: 'removed',
-              value: obj1[key]
-            });
-          }
+        function compareObjects(obj1, obj2) {
+            let diff = {};
+            let allEqual = true;
+
+            const keys = new Set([...Object.keys(obj1 || {}), ...Object.keys(obj2 || {})]);
+
+            for (const key of keys) {
+                const val1 = obj1?.[key];
+                const val2 = obj2?.[key];
+
+                if (val1 !== undefined && val2 === undefined) {
+                    diff[key] = { type: "removed", value: val1 };
+                } else if (val1 === undefined && val2 !== undefined) {
+                    diff[key] = { type: "added", value: val2 };
+                } else if (_.isPlainObject(val1) && _.isPlainObject(val2)) {
+                    // Recursively check nested objects only (not arrays)
+                    const childDiff = compareObjects(val1, val2);
+                    diff[key] = { type: "equal", value: childDiff }; // Mark whole object as equal
+                } else if (!_.isEqual(val1, val2)) {
+                    diff[key] = { type: "unequal", from: val1, to: val2 };
+                } else {
+                    diff[key] = { type: "equal", value: val1 };
+                }
+            }
+
+            return diff;
         }
-        
-        return diffs;
-      }
-      
-      // Apply highlighting to formatted JSON based on diffs
-      function applyHighlighting(json1, json2, diffs) {
-        let highlightedJson1 = JSON.stringify(json1, null, 2);
-        let highlightedJson2 = JSON.stringify(json2, null, 2);
-        
-        // Create markup for each version
-        const obj1Lines = highlightedJson1.split('\n');
-        const obj2Lines = highlightedJson2.split('\n');
-        
-        // Simple line-based highlighting for this demo
-        // For large files, a more efficient approach would be needed
-        
-        // Convert paths to line numbers (simplified approach)
-        const affectedLines = new Set();
-        diffs.forEach(diff => {
-          const pathParts = diff.path.split('.');
-          const searchKey = pathParts[pathParts.length - 1];
-          
-          // Find lines containing this key or value
-          obj1Lines.forEach((line, idx) => {
-            if (line.includes(`"${searchKey}"`) || 
-                (diff.oldValue !== undefined && line.includes(String(diff.oldValue)))) {
-              affectedLines.add(idx);
-            }
-          });
-          
-          obj2Lines.forEach((line, idx) => {
-            if (line.includes(`"${searchKey}"`) || 
-                (diff.newValue !== undefined && line.includes(String(diff.newValue)))) {
-              affectedLines.add(idx);
-            }
-          });
-        });
-        
-        // Apply highlighting
-        for (const lineNum of Array.from(affectedLines).sort((a, b) => a - b)) {
-          if (lineNum < obj1Lines.length) {
-            if (diffs.some(d => d.type === 'removed')) {
-              obj1Lines[lineNum] = `<span class="diff-removed">${obj1Lines[lineNum]}</span>`;
-            }
-          }
-          
-          if (lineNum < obj2Lines.length) {
-            if (diffs.some(d => d.type === 'added')) {
-              obj2Lines[lineNum] = `<span class="diff-added">${obj2Lines[lineNum]}</span>`;
-            }
-          }
-        }
-        
-        return {
-          obj1: obj1Lines.join('\n'),
-          obj2: obj2Lines.join('\n')
-        };
-      }
-      
-      // Format button click handler
-      formatBtn.addEventListener('click', function() {
-        errorElement.textContent = '';
-        
-        try {
-          if (json1Input.value.trim()) {
-            const formatted1 = formatJson(json1Input.value);
-            json1Input.value = formatted1;
-            result1Element.textContent = formatted1;
-          }
-          
-          if (json2Input.value.trim()) {
-            const formatted2 = formatJson(json2Input.value);
-            json2Input.value = formatted2;
-            result2Element.textContent = formatted2;
-          }
-          
-          statusElement.textContent = 'JSON formatted successfully';
-        } catch (e) {
-          errorElement.textContent = e.message;
-        }
-      });
-      
-      // Compare button click handler
-      diffBtn.addEventListener('click', function() {
+
+        // Compare button click handler
+        diffBtn.addEventListener('click', function() {
         errorElement.textContent = '';
         statusElement.textContent = 'Processing...';
+
         
         setTimeout(() => {
           try {
-            if (!json1Input.value.trim() || !json2Input.value.trim()) {
-              throw new Error('Please provide both JSON documents');
-            }
+            // if (!json1Input.value.trim() || !json2Input.value.trim()) {
+            //   throw new Error('Please provide both JSON documents');
+            // }
             
-            const obj1 = JSON.parse(json1Input.value);
-            const obj2 = JSON.parse(json2Input.value);
-            
-            // Format the inputs
-            json1Input.value = JSON.stringify(obj1, null, 2);
-            json2Input.value = JSON.stringify(obj2, null, 2);
-            
-            // Calculate differences
-            const differences = deepDiff(obj1, obj2);
-            
-            if (differences.length === 0) {
-              result1Element.textContent = JSON.stringify(obj1, null, 2);
-              result2Element.textContent = JSON.stringify(obj2, null, 2);
-              statusElement.textContent = 'No differences found. The JSON documents are identical.';
-            } else {
-              // Apply highlighting based on differences
-              const highlighted = applyHighlighting(obj1, obj2, differences);
-              result1Element.innerHTML = highlighted.obj1;
-              result2Element.innerHTML = highlighted.obj2;
-              statusElement.textContent = `Found ${differences.length} differences`;
-            }
+            // const obj1 = JSON.parse(json1Input.value);
+            // const obj2 = JSON.parse(json2Input.value);
+
+            const obj1 = {
+                id: 101,
+                name: "Alice Johnson",
+                email: "alice@example.com",
+                age: 28,
+                location: {
+                    city: "New York",
+                    state: "NY",
+                    country: "USA"
+                },
+                preferences: {
+                    language: "English",
+                    currency: "USD",
+                    notifications: true,
+                    subscriptions: ["news", "entertainment", "finance"]
+                }
+            };
+
+
+            const obj2 = {
+                id: 102,
+                name: "Bob Smith",
+                email: "bob@example.com",
+                age: 35,
+                location: {
+                    city: "New York",
+                    state: "NY"
+                },
+                preferences: {
+                    language: "Spanish",
+                    currency: "USD",
+                    notifications: false,
+                    subscriptions: ["news", "entertainment"]
+                },
+                subscriptions: ["news", "entertainment", "finance"]
+            };
+
+            //use compareJsonObjects to get the differences
+            const differences = compareObjects(obj1, obj2);
+
+            console.log(differences);
+
+            //use applyHighlighting to highlight the differences
+            const highlights = applyHighlighting(obj1, obj2, differences, '\t');
+            console.log(highlights);
+
+            result1Element.innerHTML = `{\n${highlights.json1}}`;
+            result2Element.innerHTML = `{\n${highlights.json2}}`;
+
           } catch (e) {
             errorElement.textContent = e.message;
             statusElement.textContent = '';
@@ -368,8 +322,8 @@
         }, 100); // Small delay to allow UI to update
       });
       
-      // Clear button click handler
-      clearBtn.addEventListener('click', function() {
+        // Clear button click handler
+        clearBtn.addEventListener('click', function() {
         json1Input.value = '';
         json2Input.value = '';
         result1Element.textContent = '';
